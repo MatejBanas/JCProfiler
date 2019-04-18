@@ -1,5 +1,8 @@
 package opencryptoutils;
 
+import com.github.javaparser.JavaParser;
+import com.github.javaparser.ast.CompilationUnit;
+import static opencryptoutils.Parser.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -169,6 +172,8 @@ public class PerfCodeGenerator {
         String baseAppletFilesDir = String.format("%s/templates/input_applet_files/", baseDirectory);
         File dir = new File(baseAppletFilesDir);
         String[] filesArray = dir.list();
+        
+        CompilationUnit cu = null;
         if ((filesArray != null) && (dir.isDirectory() == true)) {
 
             for (String fileName : filesArray) {
@@ -183,6 +188,14 @@ public class PerfCodeGenerator {
                     PerfCodeConfig cfg = new PerfCodeConfig(baseCfg);
                     if (enumeratePerfTrapsFile(cfg, targetFilePathOrig, targetFilePath)) {
                         filesWithTraps.add(cfg);
+                    }
+                    
+                    // Parser inserts stop const and case statement
+                    if (!fileName.equals("OCUnitTests.java")) {
+                        cu = JavaParser.parse(inputFile);
+                        getSourceConstants(cu);
+                        insertSwitchCaseStmnt(cu);
+                        writeChanges(filePath, cu);
                     }
                 }
             }
@@ -203,6 +216,20 @@ public class PerfCodeGenerator {
         ArrayList<String> filesToCopy = new ArrayList<>();
         filesToCopy.add(String.format("%s/PMC.java", outputDirApplet));
         personalizeTemplatesClient(filesWithTraps, outputDirClient, filesToCopy); // JCProfiler_client
+        
+        
+        // Update PM and PMC package declaration
+        CompilationUnit pm = parseFile(String.format("%s/PM.java", outputDirApplet));
+        CompilationUnit pmc = parseFile(String.format("%s/PMC.java", outputDirApplet));
+        changePackageDeclaration(cu, pm);
+        writeChanges(String.format("%s/PM.java", outputDirApplet), pm);
+        changePackageDeclaration(cu, pmc);
+        writeChanges(String.format("%s/PMC.java", outputDirApplet), pmc);
+        
+        // Update PerfTests
+        CompilationUnit pt = parseFile(String.format("%s/src/jcprofiler/PerfTests.java", outputDirClient));
+        changeApduTrigger(pt);
+        writeChanges(String.format("%s/src/jcprofiler/PerfTests.java", outputDirClient), pt);
         
         
         System.out.println("\n\n#########################################");

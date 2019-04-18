@@ -179,7 +179,18 @@ public class Parser {
      * @param b compilationUnit created by parsing file of which we want to change the package declaration
      */
     public static void changePackageDeclaration(CompilationUnit a, CompilationUnit b) {
-        b.setPackageDeclaration(a.getPackageDeclaration().get());
+        try {
+            if (a.getPackageDeclaration().isPresent()) {
+                b.setPackageDeclaration(a.getPackageDeclaration().get());
+            } else {
+                String x = null;
+                b.setPackageDeclaration(x);
+            }
+            
+        } catch (NullPointerException ex){
+            System.err.println("compilation unit is null " + ex.getMessage());
+        } finally {
+        }
     }
 
 
