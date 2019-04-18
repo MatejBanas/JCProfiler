@@ -1,8 +1,11 @@
 package opencryptoutils;
 
+import com.github.javaparser.JavaParser;
 import java.io.IOException;
 import org.apache.commons.cli.*;
-
+import com.github.javaparser.ast.CompilationUnit;
+import java.io.File;
+import static opencryptoutils.Parser.*;
 
 /**
  *
@@ -29,6 +32,37 @@ public class JCProfiler {
             if (cli.hasOption("help")) {
                 help();
                 return;
+            }
+            
+            if (cli.hasOption("parser")) {
+                String baseDir = cli.getOptionValue("baseDir", "");
+                String baseAppletFilesDir = String.format("%s/templates/input_applet_files/", baseDir);
+                File dir = new File(baseAppletFilesDir);
+                String[] filesArray = dir.list();
+                if ((filesArray != null) && (dir.isDirectory() == true)) {
+                    
+                    for (String fileName : filesArray) {
+                        if (!fileName.equals("OCUnitTests.java")) {
+                            String filePath = baseAppletFilesDir + fileName;
+                            File inputFile = new File(filePath);
+                            CompilationUnit cu = JavaParser.parse(inputFile);
+                            switch(cli.getOptionValue("parser")){
+                                case "simple":
+                                    insertTrapsToEveryMethod(cu);
+                                    break;
+                                case "comment":
+                                    addTrapsToCommentedMethod(cu);
+                                    writeChanges(filePath, cu);
+                                    return;
+                                case "removeTraps":
+                                    removeTrapsFromCommentedMethod(cu);
+                                    writeChanges(filePath, cu);
+                                    return;
+                                
+                            }
+                        }
+                    }
+                }
             }
 
             if (cli.hasOption("setTraps")) {
@@ -81,7 +115,8 @@ public class JCProfiler {
         opts.addOption(Option.builder("tsc").longOpt("trapIDStartConst").desc("Initial start value (short) for trapID constants.").hasArg().argName("start_constant").build());
         opts.addOption(Option.builder("bd").longOpt("baseDir").desc("Base directory with template files").hasArg().argName("base_directory").required(true).build());
         opts.addOption(Option.builder("mbd").longOpt("methodBaseName").desc("Base name of method to be profiled.").hasArg().argName("name").required(true).build());
-
+        opts.addOption(Option.builder("pt").longOpt("parser").desc("Parser that will insert traps").hasArg().argName("action").required(true).build());
+        
         CommandLineParser parser = new DefaultParser();
         return parser.parse(opts, args);
     }

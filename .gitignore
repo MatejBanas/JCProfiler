@@ -23,3 +23,5 @@ hs_err_pid*
 
 # Javadoc
 /dist/javadoc/
+/nbproject/private/
+/demo/templates/template_profiler_client/nbproject/private/
