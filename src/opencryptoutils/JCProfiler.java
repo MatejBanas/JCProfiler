@@ -49,6 +49,7 @@ public class JCProfiler {
                             switch(cli.getOptionValue("parser")){
                                 case "simple":
                                     insertTrapsToEveryMethod(cu);
+                                    writeChanges(filePath, cu);
                                     return;
                                 case "comment":
                                     addTrapsToCommentedMethod(cu);
