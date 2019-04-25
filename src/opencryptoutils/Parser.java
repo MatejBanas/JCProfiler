@@ -6,6 +6,7 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.comments.BlockComment;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -16,7 +17,7 @@ import com.github.javaparser.ast.stmt.SwitchEntryStmt;
 import com.github.javaparser.ast.visitor.GenericListVisitorAdapter;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
-
+import com.github.javaparser.ast.comments.LineComment;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -28,15 +29,15 @@ import java.util.List;
 /**
  * @author Matej Banas
  */
-public class Parser {
+public final class Parser {
     private static ArrayList<Byte> constants = new ArrayList<>();
     private static ArrayList<String> methods = new ArrayList<>();
     
-    
-    public static void main(String[] args) throws Exception {
-        //TODO check if traps are reached or not, wrong constants or logicaly, if stmnt
+    // Noninstantiable utility class
+    private Parser(){
+        throw new AssertionError();
     }
-
+    
     public static CompilationUnit parseFile(String filepath) throws IOException{
         File file = new File(filepath);
         CompilationUnit compilationUnit = JavaParser.parse(file);
@@ -60,12 +61,40 @@ public class Parser {
         Parser.methods = methods;
     }
      
+    /**
+     * finds all PERFRAP comments and changes them to code  
+     * 
+     * @param compilationUnit compilation unit
+     */
+    public static void commentToCode(CompilationUnit compilationUnit) {
+        compilationUnit.findAll(LineComment.class).stream()
+                .filter(c -> c.toString().contains("PERFTRAP"))
+                .forEach(c -> c.replace(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);")));
+    }
     
+    /**
+     * finds all lines of code representing traps and changes them to comment
+     * 
+     * @param compilationUnit compilation unit
+     */
+    public static void codeToComment(CompilationUnit compilationUnit) {
+        compilationUnit.findAll(Statement.class).stream()
+                .filter(c -> c.toString().contains("PM.check(PMC.TRAP_methodName_0);"))
+                .forEach(c -> c.replace(new LineComment("PERFTRAP")));
+    }
+    
+    /**
+     * 
+     * @param compilationUnit 
+     */
     public static void addTrapsToCommentedMethod(CompilationUnit compilationUnit) {
         compilationUnit.accept(new AddTrapsToCommentedMethodsVisitor(), null);
     }
     
-    
+    /**
+     * 
+     * @param compilationUnit 
+     */
     public static void removeTrapsFromCommentedMethod(CompilationUnit compilationUnit) {
         compilationUnit.accept(new RemoveTrapsFromCommentedMethodsVisitor(), null);
     }
@@ -76,9 +105,7 @@ public class Parser {
      */
     public static void getMethodDeclarations(CompilationUnit compilationUnit) {
         //ArrayList<String> methodsList = new ArrayList<>();
-        compilationUnit.accept(new getMethodDecl(), getMethods());
-        //getMethods().forEach(n -> System.out.println("name: " + n));
-        
+        compilationUnit.accept(new getMethodDecl(), getMethods());  
     }
     /**
      * 
@@ -250,7 +277,7 @@ public class Parser {
             if (methodDeclaration.getName().asString().equals("process")) {
                 NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
                 BlockStmt body = new BlockStmt();
-                NodeList<Statement> toBeInserted = new NodeList<Statement>();
+                NodeList<Statement> toBeInserted = new NodeList<>();
 
                 for (int i = 0; i < statements.size(); i++) {
                     /**
@@ -285,6 +312,9 @@ public class Parser {
         }
     }
     
+    /**
+     * 
+     */
     private static class AddTrapsAtMethods extends ModifierVisitor<Void> {
         @Override
         public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
@@ -343,43 +373,43 @@ public class Parser {
         }
     }
     
+    /**
+     * 
+     */
     private static class AddTrapsToCommentedMethodsVisitor extends ModifierVisitor<Void> {
         @Override
         public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
             super.visit(methodDeclaration, arg);
             if (methodDeclaration.getComment().isPresent() && methodDeclaration.getComment().get().getContent().contains("ADD TRAPS TO THIS METHOD")) {
                 NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
-                BlockStmt body = new BlockStmt();
                 for (int i = 0; i < statements.size(); i++) {
-                    body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                    body.addStatement(statements.get(i));
+                    if (statements.get(i).getComment().isPresent()) {
+                        statements.get(i).addOrphanComment(statements.get(i).getComment().get());
+                        methodDeclaration.getBody().get().addOrphanComment(statements.get(i).getOrphanComments().get(0));
+                    }
+                    statements.get(i).setLineComment("PERFTRAP");       
                 }
                 if (!statements.get(statements.size()-1).isReturnStmt()) {
-                    body.addStatement("PM.check(PMC.TRAP_methodName_0);");
+                    methodDeclaration.getBody().get().addOrphanComment(new LineComment("PERFTRAP"));
                 }
-                methodDeclaration.setBody(body);
             }
             return methodDeclaration;
         }
     }
     
+    /**
+     * 
+     */
     private static class RemoveTrapsFromCommentedMethodsVisitor extends ModifierVisitor<Void> {
         @Override
         public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
             super.visit(methodDeclaration, arg);
             if(methodDeclaration.getComment().isPresent() && methodDeclaration.getComment().get().getContent().contains("ADD TRAPS TO THIS METHOD")) {
-                NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
-                BlockStmt body = new BlockStmt();
-                for (int i = 0; i < statements.size(); i++) {
-                    if (!statements.get(i).toString().contains("PM.check")) {
-                        body.addStatement(statements.get(i));
-                    }
-                }
-                methodDeclaration.setBody(body);
+                methodDeclaration.getAllContainedComments().stream()
+                        .filter(f -> f.getContent().contains("PERFTRAP"))
+                        .forEach(f -> f.remove());
             }
             return methodDeclaration;
         }
     }
-    
-    
 }
