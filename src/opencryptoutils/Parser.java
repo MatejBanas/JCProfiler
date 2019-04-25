@@ -6,7 +6,6 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
-import com.github.javaparser.ast.comments.BlockComment;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -16,7 +15,6 @@ import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.SwitchEntryStmt;
 import com.github.javaparser.ast.visitor.GenericListVisitorAdapter;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
-import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import com.github.javaparser.ast.comments.LineComment;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -31,7 +29,6 @@ import java.util.List;
  */
 public final class Parser {
     private static ArrayList<Byte> constants = new ArrayList<>();
-    private static ArrayList<String> methods = new ArrayList<>();
     
     // Noninstantiable utility class
     private Parser(){
@@ -44,7 +41,6 @@ public final class Parser {
         return compilationUnit;
     }
  
-
     public static void setConstants(ArrayList<Byte> constants) {
         Parser.constants = constants;
     }
@@ -52,15 +48,7 @@ public final class Parser {
     public static ArrayList<Byte> getConstants() {
         return constants;
     }
-
-    public static ArrayList<String> getMethods() {
-        return methods;
-    }
-
-    public static void setMethods(ArrayList<String> methods) {
-        Parser.methods = methods;
-    }
-     
+    
     /**
      * finds all PERFRAP comments and changes them to code  
      * 
@@ -100,22 +88,6 @@ public final class Parser {
     }
     
     /**
-     * 
-     * @param compilationUnit 
-     */
-    public static void getMethodDeclarations(CompilationUnit compilationUnit) {
-        //ArrayList<String> methodsList = new ArrayList<>();
-        compilationUnit.accept(new getMethodDecl(), getMethods());  
-    }
-    /**
-     * 
-     * @param compilationUnit 
-     */
-    public static void addTrapsToMethods(CompilationUnit compilationUnit) {
-        compilationUnit.accept(new AddTrapsAtMethods(), null);   
-    }
-    
-    /**
      *
      * @param compilationUnit compilationUnit created by parsing source file
      */
@@ -146,16 +118,6 @@ public final class Parser {
                 .filter(f -> f.getType().isPrimitiveType())
                 .forEach(f -> tmpConstants.addAll(f.accept(new GetConstantsVisitor(), null)));
         setConstants(tmpConstants);
-    }
-
-    /**
-     * triggers a visitor that adds traps to the beginning and end of every method in source file
-     * visitor used: AddTrapsVisitor
-     *
-     * @param compilationUnit compilationUnit created by parsing source file
-     */
-    public static void insertTrapsToEveryMethod(CompilationUnit compilationUnit) {
-        compilationUnit.accept(new AddTrapsVisitor(), null);
     }
 
     /**
@@ -238,35 +200,7 @@ public final class Parser {
         }
     }
 
-    /**
-     * visitor that adds traps
-     */
-    private static class AddTrapsVisitor extends ModifierVisitor<Void> {
-        @Override
-        public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
-            super.visit(methodDeclaration, arg);
-            if (!methodDeclaration.getName().asString().matches("process") && !methodDeclaration.getName().asString().matches("install")) {
-                boolean returnFound = false;
-                NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
-                BlockStmt body = new BlockStmt();
-                body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                for (int i = 0; i < statements.size(); i++) {
-                    if (statements.get(i).isReturnStmt()) {
-                        returnFound = true;
-                        body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                    }
-                    body.addStatement(statements.get(i));
-                }
-                if (!returnFound) {
-                    body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                    //System.out.println(body.getStatement(body.getStatements().size()).getClass());
-                }
-                methodDeclaration.setBody(body);
-            }
-            return methodDeclaration;
-        }
-    }
-
+    
     /**
      * visitor that adds switch case statement
      */
@@ -280,11 +214,6 @@ public final class Parser {
                 NodeList<Statement> toBeInserted = new NodeList<>();
 
                 for (int i = 0; i < statements.size(); i++) {
-                    /**
-                     if(statements.get(i).getClass().equals(ExpressionStmt.class)){
-                     System.out.println(statements.get(i).asExpressionStmt().getExpression().getClass());
-                     }
-                     */
                     if (statements.get(i).isSwitchStmt()) {
                         String name = statements.get(i).asSwitchStmt().getSelector().asArrayAccessExpr().getName().toString();
                         toBeInserted.add(JavaParser.parseStatement("PM.m_perfStop = Util.makeShort(" + name + "[ISO7816.OFFSET_CDATA], " + name + "[(short) (ISO7816.OFFSET_CDATA + 1)]);"));
@@ -297,78 +226,6 @@ public final class Parser {
                 }
                 methodDeclaration.setBody(body);
             }
-            return methodDeclaration;
-        }
-    }
-    
-    /**
-     * 
-     */
-    private static class getMethodDecl extends VoidVisitorAdapter<List<String>> {
-        @Override
-        public void visit(MethodDeclaration methodDeclaration, List<String> collector){
-            super.visit(methodDeclaration, collector);
-            collector.add(methodDeclaration.getNameAsString());
-        }
-    }
-    
-    /**
-     * 
-     */
-    private static class AddTrapsAtMethods extends ModifierVisitor<Void> {
-        @Override
-        public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
-            super.visit(methodDeclaration, arg);
-            NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
-            BlockStmt body = new BlockStmt();
-           
-            for (Statement statement : statements) {               
-                if (statement.isExpressionStmt() && statement.asExpressionStmt().getExpression().isMethodCallExpr()) {                   
-                    if (getMethods().contains(statement.asExpressionStmt().getExpression().asMethodCallExpr().getName().asString())) {
-                        body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                        body.addStatement(statement);
-                        body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                    } 
-                } else if (statement.isSwitchStmt()) {
-                    for (SwitchEntryStmt switchEntry : statement.asSwitchStmt().getEntries()) {
-                        NodeList<Statement> toBeInserted = new NodeList<>();
-                        for (Statement statement2 : switchEntry.getStatements()) {
-                            if (statement2.isExpressionStmt() && statement2.asExpressionStmt().getExpression().isMethodCallExpr()) {                   
-                                if (getMethods().contains(statement2.asExpressionStmt().getExpression().asMethodCallExpr().getName().asString())) {
-                                    toBeInserted.add(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);"));
-                                    toBeInserted.add(statement2);
-                                    toBeInserted.add(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);"));
-                                } 
-                            } else if (statement2.isExpressionStmt() && statement2.asExpressionStmt().getExpression().isAssignExpr()) {
-                                if (statement2.asExpressionStmt().getExpression().asAssignExpr().getValue().isMethodCallExpr()) {
-                                    if (getMethods().contains(statement2.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getName().asString())) {
-                                        toBeInserted.add(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);"));
-                                        toBeInserted.add(statement2);
-                                        toBeInserted.add(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);"));
-                                    }
-                                }
-                            } else {
-                                toBeInserted.add(statement2);
-                            }      
-                        }
-                        switchEntry.setStatements(toBeInserted);
-                    }
-                    body.addStatement(statement);
-                } else if (statement.isExpressionStmt() && statement.asExpressionStmt().getExpression().isAssignExpr()) {
-                    if (statement.asExpressionStmt().getExpression().asAssignExpr().getValue().isMethodCallExpr()) {
-                        if (getMethods().contains(statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getName().asString())) {
-                            body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                            body.addStatement(statement);
-                            body.addStatement("PM.check(PMC.TRAP_methodName_0);");
-                        }
-                    }
-                    
-                } else {
-                    body.addStatement(statement);
-                }
-            }
-            methodDeclaration.setBody(body);
-            
             return methodDeclaration;
         }
     }
