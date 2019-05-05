@@ -47,22 +47,26 @@ public class JCProfiler {
                             File inputFile = new File(filePath);
                             CompilationUnit cu = JavaParser.parse(inputFile);
                             switch(cli.getOptionValue("parser")){
-                                case "simple":
-                                    insertTrapsToEveryMethod(cu);
-                                    writeChanges(filePath, cu);
-                                    return;
-                                case "comment":
+                                case "commentToCode":
+                                    commentToCode(cu);
+                                    break;
+                                case "codeToComment":
+                                    codeToComment(cu);
+                                    break;
+                                case "addComment":
                                     addTrapsToCommentedMethod(cu);
-                                    writeChanges(filePath, cu);
-                                    return;
-                                case "removeTraps":
+                                    break;
+                                case "removeComment":
                                     removeTrapsFromCommentedMethod(cu);
-                                    writeChanges(filePath, cu);
+                                    break;
+                                default:
+                                    System.err.println("wrong argument option");
                                     return;
-                            
                             }
+                            writeChanges(filePath, cu);
                         }
                     }
+                    return;
                 }
             }
 
@@ -116,7 +120,7 @@ public class JCProfiler {
         opts.addOption(Option.builder("tsc").longOpt("trapIDStartConst").desc("Initial start value (short) for trapID constants.").hasArg().argName("start_constant").build());
         opts.addOption(Option.builder("bd").longOpt("baseDir").desc("Base directory with template files").hasArg().argName("base_directory").required(true).build());
         opts.addOption(Option.builder("mbd").longOpt("methodBaseName").desc("Base name of method to be profiled.").hasArg().argName("name").required(true).build());
-        opts.addOption(Option.builder("pt").longOpt("parser").desc("Parser that will insert traps").hasArg().argName("action").required(true).build());
+        opts.addOption(Option.builder("pt").longOpt("parser").desc("Parser that will insert traps").hasArg().argName("action").required(false).build());
         
         CommandLineParser parser = new DefaultParser();
         return parser.parse(opts, args);

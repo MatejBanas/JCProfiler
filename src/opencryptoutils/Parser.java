@@ -2,6 +2,7 @@ package opencryptoutils;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -16,6 +17,7 @@ import com.github.javaparser.ast.stmt.SwitchEntryStmt;
 import com.github.javaparser.ast.visitor.GenericListVisitorAdapter;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.comments.LineComment;
+import com.github.javaparser.ast.nodeTypes.NodeWithStatements;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -54,10 +56,18 @@ public final class Parser {
      * 
      * @param compilationUnit compilation unit
      */
-    public static void commentToCode(CompilationUnit compilationUnit) {
-        compilationUnit.findAll(LineComment.class).stream()
-                .filter(c -> c.toString().contains("PERFTRAP"))
-                .forEach(c -> c.replace(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);")));
+    public static void commentToCode(CompilationUnit compilationUnit) {   
+        compilationUnit.findAll(Statement.class).stream()
+                .filter(c -> c.getComment().isPresent() && c.getComment().get().getContent().contains("PERFTRAP"))
+                .forEach( c -> {
+                    c.getParentNode()                           
+                            .map(parent -> (NodeWithStatements) parent)
+                            .map(NodeWithStatements::getStatements)
+                            .ifPresent(statements -> { 
+                                statements.addBefore(JavaParser.parseStatement("PM.check(PMC.TRAP_methodName_0);"), c);
+                                c.removeComment();                               
+                                });       
+                });
     }
     
     /**
@@ -66,9 +76,7 @@ public final class Parser {
      * @param compilationUnit compilation unit
      */
     public static void codeToComment(CompilationUnit compilationUnit) {
-        compilationUnit.findAll(Statement.class).stream()
-                .filter(c -> c.toString().contains("PM.check(PMC.TRAP_methodName_0);"))
-                .forEach(c -> c.replace(new LineComment("PERFTRAP")));
+       compilationUnit.accept(new CodeToCommentVisitor(), null);
     }
     
     /**
@@ -137,12 +145,11 @@ public final class Parser {
      * @param compilationUnit compilationUnit created by parsing source file
      */
     public static void insertStopConstant(CompilationUnit compilationUnit) { 
-        /*
-        if (getConstants().contains(0xf5)) {
-            TODO
+        byte x = (byte) 0xf5;
+        while (getConstants().contains(x)) {
+            x = (byte) (x + 0x01);
         }
-        */
-        BodyDeclaration<?> declaration = JavaParser.parseAnnotationBodyDeclaration("public final static byte INS_PERF_SETSTOP = (byte) 0xf5;");
+        BodyDeclaration<?> declaration = JavaParser.parseAnnotationBodyDeclaration("public final static byte INS_PERF_SETSTOP = (byte) " + x +";");
         compilationUnit.getTypes().get(0).getMembers().addFirst(declaration);
     }
 
@@ -240,7 +247,7 @@ public final class Parser {
             if (methodDeclaration.getComment().isPresent() && methodDeclaration.getComment().get().getContent().contains("ADD TRAPS TO THIS METHOD")) {
                 NodeList<Statement> statements = methodDeclaration.getBody().get().getStatements();
                 for (int i = 0; i < statements.size(); i++) {
-                    if (statements.get(i).getComment().isPresent()) {
+                    if (statements.get(i).getComment().isPresent() && !statements.get(i).getComment().get().getContent().contains("PERFTRAP")) {
                         statements.get(i).addOrphanComment(statements.get(i).getComment().get());
                         methodDeclaration.getBody().get().addOrphanComment(statements.get(i).getOrphanComments().get(0));
                     }
@@ -266,6 +273,30 @@ public final class Parser {
                         .filter(f -> f.getContent().contains("PERFTRAP"))
                         .forEach(f -> f.remove());
             }
+            return methodDeclaration;
+        }
+    }
+    
+    private static class CodeToCommentVisitor extends ModifierVisitor<Void> {
+        @Override
+        public MethodDeclaration visit(MethodDeclaration methodDeclaration, Void arg) {
+            //super.visit(methodDeclaration, arg);
+            methodDeclaration.findAll(Statement.class).stream()
+                    .filter(c -> c.isExpressionStmt() &&
+                            c.asExpressionStmt().getExpression().isMethodCallExpr() &&
+                            c.asExpressionStmt().getExpression().asMethodCallExpr().getScope().isPresent() &&
+                            c.asExpressionStmt().getExpression().asMethodCallExpr().getScope().get().toString().equals("PM"))
+                    .forEach(c -> {
+                        Node parent = c.getParentNode().get();
+                        List<Node> children = parent.getChildNodes();
+
+                        if(children.size() != children.indexOf(c) + 1) {
+                            children.get(children.indexOf(c) + 1).setLineComment("PERFTRAP");
+                        } else {                            
+                            parent.addOrphanComment(new LineComment("PERFTRAP"));
+                        }
+                        parent.remove(c);
+                    });        
             return methodDeclaration;
         }
     }
